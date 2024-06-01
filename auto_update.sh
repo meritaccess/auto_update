@@ -14,39 +14,68 @@ LOG_FILE="/home/$USER/logs/update.log"
 mkdir -p /home/$USER/logs
 touch $LOG_FILE
 
-# Wait for the network to be ready
-while ! ping -c 1 github.com &> /dev/null; do
-    echo "Waiting for network..." >> $LOG_FILE
-    sleep 5
-done
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
+}
 
-mkdir -p $DOWNLOAD_DIR
+handle_error() {
+    log_message "ERROR: $1"
+    exit 1
+}
 
-# latest_version=$(curl -s $VERSION_URL)
-latest_version="4.0.0"
+wait_for_network() {
+    log_message "Starting network check."
+    while ! ping -c 1 -W 1 github.com &> /dev/null; do
+        log_message "Waiting for network..."
+        sleep 5
+    done
+    log_message "Network is up."
+}
+
+fetch_latest_version() {
+    # Uncomment the next line to use the actual version check
+    # curl -s $VERSION_URL
+    echo "4.0.0"
+}
+
+update_application() {
+    mkdir -p $DOWNLOAD_DIR || handle_error "Failed to create download directory."
+
+    curl -o $DOWNLOAD_DIR/$ZIP_NAME $UPDATE_URL || handle_error "Failed to download the update."
+    log_message "Download successful."
+
+    unzip -o $DOWNLOAD_DIR/$ZIP_NAME -d $DOWNLOAD_DIR >> $LOG_FILE 2>&1 || handle_error "Failed to unzip the update package."
+    log_message "Unzip successful."
+
+    rm $DOWNLOAD_DIR/$ZIP_NAME || handle_error "Failed to remove zip file."
+    log_message "Removed zip file."
+
+    cp -r $DOWNLOAD_DIR/$FILE_NAME/* $APP_DIR >> $LOG_FILE 2>&1 || handle_error "Failed to copy new files to application directory."
+    log_message "Copied new files to application directory."
+
+    sudo rm -rf $DOWNLOAD_DIR || handle_error "Failed to remove temporary download directory."
+    log_message "Removed temporary download directory."
+
+    echo $latest_version > $VERSION_FILE || handle_error "Failed to update version file."
+    log_message "Update to version $latest_version completed successfully."
+}
+
+# Main script execution
+wait_for_network
+
+latest_version=$(fetch_latest_version)
 if [ -f $VERSION_FILE ]; then
     current_version=$(cat $VERSION_FILE)
 else
     current_version="none"
 fi
 
-echo "Current version: $current_version" >> $LOG_FILE
-echo "Latest version: $latest_version" >> $LOG_FILE
+log_message "Current version: $current_version"
+log_message "Latest version: $latest_version"
 
 if [ "$latest_version" != "$current_version" ]; then
-    echo "New version available. Updating..." >> $LOG_FILE
-    if curl -o $DOWNLOAD_DIR/$ZIP_NAME $UPDATE_URL; then
-        if unzip -o $DOWNLOAD_DIR/$ZIP_NAME -d $DOWNLOAD_DIR >> $LOG_FILE 2>&1; then
-            rm $DOWNLOAD_DIR/$ZIP_NAME >> $LOG_FILE 2>&1
-            cp -r $DOWNLOAD_DIR/$FILE_NAME/* $APP_DIR >> $LOG_FILE 2>&1
-            sudo rm -rf $DOWNLOAD_DIR >> $LOG_FILE 2>&1
-            echo "Update to version $latest_version completed successfully." >> $LOG_FILE
-        else
-            echo "Failed to unzip the update package." >> $LOG_FILE
-        fi
-    else
-        echo "Failed to download the update." >> $LOG_FILE
-    fi
+    log_message "New version available. Updating..."
+    update_application
 else
-    echo "You already have the latest version." >> $LOG_FILE
+    log_message "You already have the latest version."
 fi
