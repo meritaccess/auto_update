@@ -10,7 +10,6 @@ ZIP_NAME="update-main.zip"
 FILE_NAME="update-main"
 LOG_FILE="/home/$USER/logs/update.log"
 
-# Ensure log file exists
 mkdir -p /home/$USER/logs
 touch $LOG_FILE
 
@@ -33,7 +32,6 @@ wait_for_network() {
 }
 
 fetch_latest_version() {
-    # Uncomment the next line to use the actual version check
     # curl -s $VERSION_URL
     echo "4.0.0"
 }
@@ -60,7 +58,6 @@ update_application() {
     log_message "Update to version $latest_version completed successfully."
 }
 
-# Main script execution
 wait_for_network
 
 latest_version=$(fetch_latest_version)
