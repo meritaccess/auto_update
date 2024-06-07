@@ -15,7 +15,7 @@ After=network.target
 [Service]
 Type=simple
 User=bantj
-ExecStart=/home/bantj/auto_update.sh
+ExecStart=/home/meritaccess/auto_update/auto_update.sh
 
 [Install]
 WantedBy=default.target
