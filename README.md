@@ -20,7 +20,7 @@ User=meritaccess
 ExecStart=/home/meritaccess/auto_update/auto_update.sh
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 ```
 Restart services and reboot
 ```
