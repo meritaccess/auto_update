@@ -1,12 +1,13 @@
 #!/bin/bash
 
 USER="meritaccess"
-APP_DIR="/home/$USER/merit_access_test"
+APP_DIR="/opt/merit_access"
 VERSION_FILE="$APP_DIR/version.txt"
 REPO="meritaccess/merit_access"
 DOWNLOAD_DIR="/home/$USER/merit_access_update"
 LOG_FILE="/home/$USER/logs/update.log"
-NETWORK_TIMEOUT = 20
+PYTHON="/usr/bin/python"
+NETWORK_TIMEOUT=30
 
 mkdir -p /home/$USER/logs
 touch $LOG_FILE
@@ -17,7 +18,7 @@ log_message() {
 
 handle_error() {
     log_message "ERROR: $1"
-    exit 1
+    return 1
 }
 
 wait_for_network() {
@@ -26,11 +27,13 @@ wait_for_network() {
     while ! ping -c 1 -W 1 github.com &> /dev/null; do
         if [ $SECONDS -ge $NETWORK_TIMEOUT ]; then
             handle_error "Network timeout after $NETWORK_TIMEOUT seconds."
+            return 1
         fi
         log_message "Waiting for network..."
         sleep 5
     done
     log_message "Network is up."
+    return 0
 }
 
 
@@ -53,7 +56,7 @@ update_application() {
 
     unzip -o $DOWNLOAD_DIR/$asset_name -d $DOWNLOAD_DIR >> $LOG_FILE 2>&1 || handle_error "Failed to unzip the update package."
     log_message "Unzip successful."
-    
+
     unzipped_dir=$(unzip -Z -1 $DOWNLOAD_DIR/$asset_name | head -n 1 | cut -d '/' -f 1)
     log_message "Unzipped directory: $unzipped_dir"
 
@@ -66,30 +69,39 @@ update_application() {
     rm -rf $DOWNLOAD_DIR || handle_error "Failed to remove temporary download directory."
     log_message "Removed temporary download directory."
 
+    pip install -r $APP_DIR/requirements.txt || handle_error "Failed to install required Python packages."
+    log_message "Installed required Python packages."
+
     echo $latest_version > $VERSION_FILE || handle_error "Failed to update version file."
     log_message "Update to version $latest_version completed successfully."
 }
 
-
 wait_for_network
+network_status=$?
 
-latest_release_info=$(curl -s https://api.github.com/repos/$REPO/releases/latest)
-latest_version=$(fetch_latest_version "$latest_release_info")
-asset_url=$(fetch_asset_url "$latest_release_info")
+if [ $network_status -eq 0 ]; then
 
-if [ -f $VERSION_FILE ]; then
-    current_version=$(cat $VERSION_FILE)
-else
-    current_version="none"
+    latest_release_info=$(curl -s https://api.github.com/repos/$REPO/releases/latest)
+    latest_version=$(fetch_latest_version "$latest_release_info")
+    asset_url=$(fetch_asset_url "$latest_release_info")
+
+    if [ -f $VERSION_FILE ]; then
+        current_version=$(cat $VERSION_FILE)
+    else
+        current_version="none"
+    fi
+
+    log_message "Current version: $current_version"
+    log_message "Latest version: $latest_version"
+    log_message "Asset URL: $asset_url"
+
+    if [ "$latest_version" != "$current_version" ]; then
+        log_message "New version available. Updating..."
+        update_application "$asset_url"
+    else
+        log_message "You already have the latest version."
+    fi
 fi
 
-log_message "Current version: $current_version"
-log_message "Latest version: $latest_version"
-log_message "Asset URL: $asset_url"
-
-if [ "$latest_version" != "$current_version" ]; then
-    log_message "New version available. Updating..."
-    update_application "$asset_url"
-else
-    log_message "You already have the latest version."
-fi
+$PYTHON $APP_DIR/main.py || handle_error "Failed to run Merit Access App"
+log_message "Successfully run Merit Access App"
