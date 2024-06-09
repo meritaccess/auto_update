@@ -2,7 +2,7 @@
 Script for handling automatic updates of Merit Access
 
 ## Setup
-In the script set USER to your linux username
+In the script set USER to your linux username and APP_DIR to the location of Merit Access App
 ```
 sudo apt-get install jq
 sudo chmod 777 auto_update.sh
