@@ -1,5 +1,7 @@
 #!/bin/bash
-
+DB_USER="ma"
+DB_PASS="FrameWork5414*"
+DB_NAME="MeritAccessLocal"
 USER="meritaccess"
 APP_DIR="/opt/merit_access"
 VERSION_FILE="$APP_DIR/version.txt"
@@ -19,6 +21,12 @@ log_message() {
 handle_error() {
     log_message "ERROR: $1"
     return 1
+}
+
+get_update_mode() {
+    SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='update_mode';"
+    update_mode=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
+    return "$update_mode"
 }
 
 wait_for_network() {
@@ -76,30 +84,37 @@ update_application() {
     log_message "Update to version $latest_version completed successfully."
 }
 
-wait_for_network
-network_status=$?
+get_update_mode
+update_mode=$?
+log_message "Update mode: $update_mode"
 
-if [ $network_status -eq 0 ]; then
+if [ $update_mode -eq 0 ]; then
 
-    latest_release_info=$(curl -s https://api.github.com/repos/$REPO/releases/latest)
-    latest_version=$(fetch_latest_version "$latest_release_info")
-    asset_url=$(fetch_asset_url "$latest_release_info")
+    wait_for_network
+    network_status=$?
 
-    if [ -f $VERSION_FILE ]; then
-        current_version=$(cat $VERSION_FILE)
-    else
-        current_version="none"
-    fi
+    if [ $network_status -eq 0 ]; then
 
-    log_message "Current version: $current_version"
-    log_message "Latest version: $latest_version"
-    log_message "Asset URL: $asset_url"
+        latest_release_info=$(curl -s https://api.github.com/repos/$REPO/releases/latest)
+        latest_version=$(fetch_latest_version "$latest_release_info")
+        asset_url=$(fetch_asset_url "$latest_release_info")
 
-    if [ "$latest_version" != "$current_version" ]; then
-        log_message "New version available. Updating..."
-        update_application "$asset_url"
-    else
-        log_message "You already have the latest version."
+        if [ -f $VERSION_FILE ]; then
+            current_version=$(cat $VERSION_FILE)
+        else
+            current_version="none"
+        fi
+
+        log_message "Current version: $current_version"
+        log_message "Latest version: $latest_version"
+        log_message "Asset URL: $asset_url"
+
+        if [ "$latest_version" != "$current_version" ]; then
+            log_message "New version available. Updating..."
+            update_application "$asset_url"
+        else
+            log_message "You already have the latest version."
+        fi
     fi
 fi
 
