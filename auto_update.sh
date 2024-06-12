@@ -18,6 +18,7 @@ log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
 }
 
+
 handle_error() {
     log_message "ERROR: $1"
     return 1
