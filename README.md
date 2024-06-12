@@ -11,13 +11,17 @@ sudo nano /etc/systemd/system/auto_update.service
 Add this to the file /etc/systemd/system/auto_update.service (set ExecStart= to path to auto_update.sh and user= to your linux username)
 ```
 [Unit]
-Description=Run auto_update.sh at startup
-After=network.target
+Description=Merit Access Update Service
+After=network.target mysqld.service
+Requires=mysqld.service
 
 [Service]
 Type=simple
 User=meritaccess
-ExecStart=/home/meritaccess/auto_update/auto_update.sh
+Group=meritaccess
+WorkingDirectory=/home/meritaccess
+ExecStart=/bin/bash /home/meritaccess/auto_update/auto_update.sh
+Restart=on.failure
 
 [Install]
 WantedBy=multi-user.target
