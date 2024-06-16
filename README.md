@@ -4,7 +4,7 @@ Script for handling automatic updates of Merit Access
 ## Database setup
 In ConfigDU table set appupdate=meritaccess/merit_access (github repository)
 
-## Setup
+## Script setup
 In the script set USER to your linux username and APP_DIR to the location of Merit Access App <br />
 Set DB_USER, DB_PASS, DB_NAME to your database credentials
 
