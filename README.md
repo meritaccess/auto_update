@@ -1,8 +1,13 @@
 # Auto Update
 Script for handling automatic updates of Merit Access
 
+# Database setup
+In ConfigDU table set appupdate=meritaccess/merit_access (github repository)
+
 ## Setup
 In the script set USER to your linux username and APP_DIR to the location of Merit Access App
+Set DB_USER, DB_PASS, DB_NAME to your database credentials
+
 ```
 sudo apt-get install jq
 sudo chmod 777 auto_update.sh
