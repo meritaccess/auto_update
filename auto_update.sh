@@ -5,7 +5,6 @@ DB_NAME="MeritAccessLocal"
 USER="meritaccess"
 APP_DIR="/opt/merit_access"
 VERSION_FILE="$APP_DIR/version.txt"
-REPO="meritaccess/merit_access"
 DOWNLOAD_DIR="/home/$USER/merit_access_update"
 LOG_FILE="/home/$USER/logs/update.log"
 PYTHON="/usr/bin/python"
@@ -28,6 +27,12 @@ get_update_mode() {
     SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='update_mode';"
     update_mode=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
     return "$update_mode"
+}
+
+get_repo() {
+    SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='appupdate';"
+    repo=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
+    echo "$repo"
 }
 
 wait_for_network() {
@@ -95,8 +100,9 @@ if [ $update_mode -eq 0 ]; then
     network_status=$?
 
     if [ $network_status -eq 0 ]; then
-
-        latest_release_info=$(curl -s https://api.github.com/repos/$REPO/releases/latest)
+        get_repo
+        repo=$(get_repo)
+        latest_release_info=$(curl -s https://api.github.com/repos/$repo/releases/latest)
         latest_version=$(fetch_latest_version "$latest_release_info")
         asset_url=$(fetch_asset_url "$latest_release_info")
 
