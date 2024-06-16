@@ -1,7 +1,7 @@
 # Auto Update
 Script for handling automatic updates of Merit Access
 
-# Database setup
+## Database setup
 In ConfigDU table set appupdate=meritaccess/merit_access (github repository)
 
 ## Setup
