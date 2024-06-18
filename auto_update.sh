@@ -3,7 +3,7 @@ DB_USER="ma"
 DB_PASS="FrameWork5414*"
 DB_NAME="MeritAccessLocal"
 USER="meritaccess"
-APP_DIR="/opt/merit_access"
+APP_DIR="/home/$USER/merit_access"
 VERSION_FILE="$APP_DIR/version.txt"
 DOWNLOAD_DIR="/home/$USER/merit_access_update"
 LOG_FILE="/home/$USER/logs/update.log"
@@ -11,6 +11,7 @@ PYTHON="/usr/bin/python"
 NETWORK_TIMEOUT=30
 
 mkdir -p /home/$USER/logs
+mkdir -p $APP_DIR
 touch $LOG_FILE
 
 log_message() {
