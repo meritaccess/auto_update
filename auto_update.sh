@@ -10,6 +10,9 @@ LOG_FILE="/home/$USER/logs/update.log"
 PYTHON="/usr/bin/python"
 NETWORK_TIMEOUT=30
 
+
+sudo mknod /dev/wie1 c 240 0
+sudo mknod /dev/wie2 c 239 0
 mkdir -p /home/$USER/logs
 mkdir -p $APP_DIR
 touch $LOG_FILE
