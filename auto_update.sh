@@ -3,9 +3,15 @@ DB_USER="ma"
 DB_PASS="FrameWork5414*"
 DB_NAME="MeritAccessLocal"
 USER="meritaccess"
-APP_DIR="/home/$USER/merit_access"
-VERSION_FILE="$APP_DIR/version.txt"
-DOWNLOAD_DIR="/home/$USER/merit_access_update"
+
+APP_DIR_PYTHON="/home/$USER/merit_access"
+APP_DIR_WEB="/var/www/html/"
+VERSION_FILE_PYTHON="$APP_DIR_PYTHON/version.txt"
+VERSION_FILE_WEB="$APP_DIR_WEB/version.txt"
+DOWNLOAD_DIR_PYTHON="/home/$USER/merit_access_update"
+DOWNLOAD_DIR_WEB="/home/$USER/merit_access_web_update"
+REPO_WEB="meritaccess/html"
+
 LOG_FILE="/home/$USER/logs/update.log"
 PYTHON="/usr/bin/python"
 NETWORK_TIMEOUT=30
@@ -14,7 +20,8 @@ NETWORK_TIMEOUT=30
 sudo mknod /dev/wie1 c 240 0
 sudo mknod /dev/wie2 c 239 0
 mkdir -p /home/$USER/logs
-mkdir -p $APP_DIR
+mkdir -p $APP_DIR_PYTHON
+mkdir -p $APP_DIR_WEB
 touch $LOG_FILE
 
 log_message() {
@@ -63,9 +70,15 @@ fetch_asset_url() {
 }
 
 update_application() {
-    local asset_url=$1
+    local APP_NAME=$1
+    local APP_DIR=$2
+    local VERSION_FILE=$3
+    local DOWNLOAD_DIR=$4
+    local asset_url=$5
     local asset_name="update.zip"
-    echo "$asset_url"
+
+    log_message "Updating $APP_NAME"
+
     mkdir -p $DOWNLOAD_DIR || handle_error "Failed to create download directory."
 
     curl -L -o $DOWNLOAD_DIR/$asset_name $asset_url || { handle_error "Failed to download the update."; return; }
@@ -77,20 +90,72 @@ update_application() {
     unzipped_dir=$(unzip -Z -1 $DOWNLOAD_DIR/$asset_name | head -n 1 | cut -d '/' -f 1)
     log_message "Unzipped directory: $unzipped_dir"
 
-    rm -r $APP_DIR/* || { handle_error "Failed to remove old version."; return; }
+    sudo rm -r $APP_DIR/* || { handle_error "Failed to remove old version."; return; }
     log_message "Removed old version"
 
-    cp -r $DOWNLOAD_DIR/$unzipped_dir/* $APP_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
+    sudo cp -r $DOWNLOAD_DIR/$unzipped_dir/* $APP_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
     log_message "Copied new files to application directory."
 
     rm -rf $DOWNLOAD_DIR || { handle_error "Failed to remove temporary download directory."; return; }
     log_message "Removed temporary download directory."
 
-    pip install -r $APP_DIR/requirements.txt || { handle_error "Failed to install required Python packages."; return; }
-    log_message "Installed required Python packages."
+    if [ -e $APP_DIR/requirements.txt ]; then
+        pip install -r $APP_DIR/requirements.txt || { handle_error "Failed to install required Python packages."; return; }
+        log_message "Installed required Python packages."
+    fi
 
+    echo "$latest_version" > $VERSION_FILE
     log_message "Update to version $latest_version completed successfully."
 }
+
+
+update_merit_access_web(){
+    latest_release_info=$(curl -s https://api.github.com/repos/$REPO_WEB/releases/latest)
+    latest_version=$(fetch_latest_version "$latest_release_info")
+    asset_url=$(fetch_asset_url "$latest_release_info")
+
+    if [ -f $VERSION_FILE_WEB ]; then
+        current_version=$(cat $VERSION_FILE_WEB)
+    else
+        current_version="none"
+    fi
+
+    log_message "Current version: $current_version"
+    log_message "Latest version: $latest_version"
+    log_message "Asset URL: $asset_url"
+
+    if [ "$latest_version" != "$current_version" ]; then
+        log_message "New version available. Updating..."
+        update_application "Merit Access Web" $APP_DIR_WEB $VERSION_FILE_WEB $DOWNLOAD_DIR_WEB "$asset_url"
+    else
+        log_message "You already have the latest version."
+    fi
+}
+
+update_merit_access(){
+    repo=$(get_repo)
+    latest_release_info=$(curl -s https://api.github.com/repos/$repo/releases/latest)
+    latest_version=$(fetch_latest_version "$latest_release_info")
+    asset_url=$(fetch_asset_url "$latest_release_info")
+
+    if [ -f $VERSION_FILE_PYTHON ]; then
+        current_version=$(cat $VERSION_FILE_PYTHON)
+    else
+        current_version="none"
+    fi
+
+    log_message "Current version: $current_version"
+    log_message "Latest version: $latest_version"
+    log_message "Asset URL: $asset_url"
+
+    if [ "$latest_version" != "$current_version" ]; then
+        log_message "New version available. Updating..."
+        update_application "Merit Access Python" $APP_DIR_PYTHON $VERSION_FILE_PYTHON $DOWNLOAD_DIR_PYTHON "$asset_url"
+    else
+        log_message "You already have the latest version."
+    fi
+}
+
 
 get_update_mode
 update_mode=$?
@@ -102,29 +167,9 @@ if [ $update_mode -eq 0 ]; then
     network_status=$?
 
     if [ $network_status -eq 0 ]; then
-        get_repo
-        repo=$(get_repo)
-        latest_release_info=$(curl -s https://api.github.com/repos/$repo/releases/latest)
-        latest_version=$(fetch_latest_version "$latest_release_info")
-        asset_url=$(fetch_asset_url "$latest_release_info")
-
-        if [ -f $VERSION_FILE ]; then
-            current_version=$(cat $VERSION_FILE)
-        else
-            current_version="none"
-        fi
-
-        log_message "Current version: $current_version"
-        log_message "Latest version: $latest_version"
-        log_message "Asset URL: $asset_url"
-
-        if [ "$latest_version" != "$current_version" ]; then
-            log_message "New version available. Updating..."
-            update_application "$asset_url"
-        else
-            log_message "You already have the latest version."
-        fi
+        update_merit_access_web
+        update_merit_access
     fi
 fi
 
-$PYTHON $APP_DIR/main.py || handle_error "Failed to run Merit Access App"
+# $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
