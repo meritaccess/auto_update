@@ -24,7 +24,6 @@ log_message() {
 
 handle_error() {
     log_message "ERROR: $1"
-    return 1
 }
 
 get_update_mode() {
@@ -42,15 +41,15 @@ get_repo() {
 wait_for_network() {
     log_message "Starting network check."
     SECONDS=0
-    while ! ping -c 1 -W 1 github.com &> /dev/null; do
+    while ! ping -c 1 -W 1 github.com &> /dev/null || ! nc -zv github.com 443 &> /dev/null; do
         if [ $SECONDS -ge $NETWORK_TIMEOUT ]; then
-            handle_error "Network timeout after $NETWORK_TIMEOUT seconds."
+            handle_error "Network timeout after $NETWORK_TIMEOUT seconds or port 443 is blocked."
             return 1
         fi
-        log_message "Waiting for network..."
+        log_message "Waiting for network and port 443 availability..."
         sleep 5
     done
-    log_message "Network is up."
+    log_message "Network and port 443 are up."
     return 0
 }
 
@@ -69,28 +68,27 @@ update_application() {
     echo "$asset_url"
     mkdir -p $DOWNLOAD_DIR || handle_error "Failed to create download directory."
 
-    curl -L -o $DOWNLOAD_DIR/$asset_name $asset_url || handle_error "Failed to download the update."
+    curl -L -o $DOWNLOAD_DIR/$asset_name $asset_url || { handle_error "Failed to download the update."; return; }
     log_message "Download successful."
 
-    unzip -o $DOWNLOAD_DIR/$asset_name -d $DOWNLOAD_DIR >> $LOG_FILE 2>&1 || handle_error "Failed to unzip the update package."
+    unzip -o $DOWNLOAD_DIR/$asset_name -d $DOWNLOAD_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to unzip the update package."; return; }
     log_message "Unzip successful."
 
     unzipped_dir=$(unzip -Z -1 $DOWNLOAD_DIR/$asset_name | head -n 1 | cut -d '/' -f 1)
     log_message "Unzipped directory: $unzipped_dir"
 
-    rm -r $APP_DIR/*
+    rm -r $APP_DIR/* || { handle_error "Failed to remove old version."; return; }
     log_message "Removed old version"
 
-    cp -r $DOWNLOAD_DIR/$unzipped_dir/* $APP_DIR >> $LOG_FILE 2>&1 || handle_error "Failed to copy new files to application directory."
+    cp -r $DOWNLOAD_DIR/$unzipped_dir/* $APP_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
     log_message "Copied new files to application directory."
 
-    rm -rf $DOWNLOAD_DIR || handle_error "Failed to remove temporary download directory."
+    rm -rf $DOWNLOAD_DIR || { handle_error "Failed to remove temporary download directory."; return; }
     log_message "Removed temporary download directory."
 
-    pip install -r $APP_DIR/requirements.txt || handle_error "Failed to install required Python packages."
+    pip install -r $APP_DIR/requirements.txt || { handle_error "Failed to install required Python packages."; return; }
     log_message "Installed required Python packages."
 
-    echo $latest_version > $VERSION_FILE || handle_error "Failed to update version file."
     log_message "Update to version $latest_version completed successfully."
 }
 
@@ -130,4 +128,3 @@ if [ $update_mode -eq 0 ]; then
 fi
 
 $PYTHON $APP_DIR/main.py || handle_error "Failed to run Merit Access App"
-log_message "Successfully run Merit Access App"
