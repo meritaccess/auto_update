@@ -16,13 +16,26 @@ PYTHON="/usr/bin/python"
 NETWORK_TIMEOUT=30
 
 
-sudo mknod /dev/wie1 c 240 0
-sudo mknod /dev/wie2 c 239 0
-mkdir -p /home/$USER/logs
-mkdir -p $APP_DIR_PYTHON
-mkdir -p $APP_DIR_WEB
-mkdir -p $DATABASE_UPDATE_DIR
-touch $LOG_FILE
+create_device_node(){
+    local device_name=$1
+    local major_number=$2
+    local minor_number=$3
+
+    if [ ! -e "$device_name" ]; then
+        echo "Creating device node: $device_name with major number $major_number and minor number $minor_number"
+        sudo mknod "$device_name" c "$major_number" "$minor_number"
+    fi
+}
+
+
+create_directories(){
+    mkdir -p /home/$USER/logs
+    mkdir -p $APP_DIR_PYTHON
+    mkdir -p $APP_DIR_WEB
+    mkdir -p $DATABASE_UPDATE_DIR
+    touch $LOG_FILE
+}
+
 
 log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
@@ -169,6 +182,12 @@ update_database() {
 }
 
 
+# Wiegand device nodes
+create_device_node /dev/wie1 240 0
+create_device_node /dev/wie2 239 0
+
+# Update
+create_directories
 get_update_mode
 update_mode=$?
 log_message "Update mode: $update_mode"
@@ -185,4 +204,5 @@ if [ $update_mode -eq 0 ]; then
     fi
 fi
 
+# Run Merit Access App
 $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
