@@ -5,7 +5,7 @@ DB_NAME="MeritAccessLocal"
 USER="meritaccess"
 
 APP_DIR_PYTHON="/home/$USER/merit_access"
-APP_DIR_WEB="/var/www/html/"
+APP_DIR_WEB="/var/www/html"
 DATABASE_UPDATE_DIR="/home/$USER/database_update"
 
 REPO_WEB="meritaccess/html"
@@ -21,6 +21,7 @@ sudo mknod /dev/wie2 c 239 0
 mkdir -p /home/$USER/logs
 mkdir -p $APP_DIR_PYTHON
 mkdir -p $APP_DIR_WEB
+mkdir -p $DATABASE_UPDATE_DIR
 touch $LOG_FILE
 
 log_message() {
@@ -32,13 +33,13 @@ handle_error() {
 }
 
 get_update_mode() {
-    SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='update_mode';"
+    local SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='update_mode';"
     update_mode=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
     return "$update_mode"
 }
 
 get_repo() {
-    SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='appupdate';"
+    local SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='appupdate';"
     repo=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
     echo "$repo"
 }
@@ -86,7 +87,7 @@ download_update_github(){
     echo "$unzipped_dir"
 }
 
-update_application() {
+install_update() {
     local APP_NAME=$1
     local APP_DIR=$2
     local asset_url=$3
@@ -95,10 +96,14 @@ update_application() {
 
     unzipped_dir=$(download_update_github $APP_DIR $asset_url) || { handle_error "Failed to download the update."; return; }
 
-    sudo rm -r $APP_DIR/* || { handle_error "Failed to remove old version."; return; }
-    log_message "Removed old version"
+    if [ "$(ls -A $APP_DIR)" ]; then
+        rm -r $APP_DIR/* || { handle_error "Failed to remove old version."; return; }
+        log_message "Removed old version"
+    else
+        log_message "No old version installed"
+    fi
 
-    sudo cp -r "$APP_DIR"_temp/$unzipped_dir/* $APP_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
+    cp -r "$APP_DIR"_temp/$unzipped_dir/* $APP_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
     log_message "Copied new files to application directory."
 
     rm -rf "$APP_DIR"_temp || { handle_error "Failed to remove temporary download directory."; return; }
@@ -123,32 +128,17 @@ get_current_version(){
 }
 
 
-update_merit_access_web(){
-    latest_release_info=$(curl -s https://api.github.com/repos/$REPO_WEB/releases/latest)
-    latest_version=$(fetch_latest_version "$latest_release_info")
-    asset_url=$(fetch_asset_url "$latest_release_info")
-    current_version=$(get_current_version "$APP_DIR_WEB/version.txt")
+update_version() {
+    local app_name=$1
+    local repo=$2
+    local app_dir=$3
+    local download_dir=$4
+    local extra_update_command=$5
 
-    log_message "Current version: $current_version"
-    log_message "Latest version: $latest_version"
-    log_message "Asset URL: $asset_url"
-
-    if [ "$latest_version" != "$current_version" ]; then
-        log_message "New version available. Updating..."
-        update_application "Merit Access Web" $APP_DIR_WEB $DOWNLOAD_DIR_WEB "$asset_url"
-        log_message "Update to version $latest_version completed successfully."
-    else
-        log_message "You already have the latest version."
-    fi
-
-}
-
-update_merit_access(){
-    repo=$(get_repo)
     latest_release_info=$(curl -s https://api.github.com/repos/$repo/releases/latest)
     latest_version=$(fetch_latest_version "$latest_release_info")
     asset_url=$(fetch_asset_url "$latest_release_info")
-    current_version=$(get_current_version "$APP_DIR_PYTHON/version.txt")
+    current_version=$(get_current_version "$app_dir/version.txt")
 
     log_message "Current version: $current_version"
     log_message "Latest version: $latest_version"
@@ -156,33 +146,26 @@ update_merit_access(){
 
     if [ "$latest_version" != "$current_version" ]; then
         log_message "New version available. Updating..."
-        update_application "Merit Access Python" $APP_DIR_PYTHON $DOWNLOAD_DIR_PYTHON "$asset_url"
+        install_update "$app_name" $app_dir $download_dir "$asset_url"
+        eval "$extra_update_command"
         log_message "Update to version $latest_version completed successfully."
     else
         log_message "You already have the latest version."
     fi
 }
 
-update_database(){
-    latest_release_info=$(curl -s https://api.github.com/repos/$REPO_DATABASE/releases/latest)
-    latest_version=$(fetch_latest_version "$latest_release_info")
-    asset_url=$(fetch_asset_url "$latest_release_info")
-    current_version=$(get_current_version $DATABASE_UPDATE_DIR/version.txt)
+update_merit_access_web() {
+    update_version "Merit Access Web" "$REPO_WEB" "$APP_DIR_WEB" "$DOWNLOAD_DIR_WEB" ""
+}
 
-    log_message "Current version: $current_version"
-    log_message "Latest version: $latest_version"
-    log_message "Asset URL: $asset_url"
+update_merit_access() {
+    local repo=$(get_repo)
+    update_version "Merit Access Python" "$repo" "$APP_DIR_PYTHON" "$DOWNLOAD_DIR_PYTHON" ""
+}
 
-    if [ "$latest_version" != "$current_version" ]; then
-        log_message "New version available. Updating..."
-        update_application "Database" $DATABASE_UPDATE_DIR $DOWNLOAD_DIR_DATABASE "$asset_url"
-        UPDATE_SQL_FILE=$DATABASE_UPDATE_DIR/update.sql
-        mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$UPDATE_SQL_FILE" || { handle_error "Failed to execute update.sql"; return; }
-        log_message "Update to version $latest_version completed successfully."
-    else
-        log_message "You already have the latest version."
-    fi
-    
+update_database() {
+    local mysql_command='mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$DATABASE_UPDATE_DIR/update.sql" || { handle_error "Failed to execute update.sql"; return; }'
+    update_version "Database" "$REPO_DATABASE" "$DATABASE_UPDATE_DIR" "$DOWNLOAD_DIR_DATABASE" "$mysql_command"
 }
 
 
@@ -202,4 +185,4 @@ if [ $update_mode -eq 0 ]; then
     fi
 fi
 
-# $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+$PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
