@@ -6,11 +6,10 @@ USER="meritaccess"
 
 APP_DIR_PYTHON="/home/$USER/merit_access"
 APP_DIR_WEB="/var/www/html/"
-VERSION_FILE_PYTHON="$APP_DIR_PYTHON/version.txt"
-VERSION_FILE_WEB="$APP_DIR_WEB/version.txt"
-DOWNLOAD_DIR_PYTHON="/home/$USER/merit_access_update"
-DOWNLOAD_DIR_WEB="/home/$USER/merit_access_web_update"
+DATABASE_UPDATE_DIR="/home/$USER/database_update"
+
 REPO_WEB="meritaccess/html"
+REPO_DATABASE="meritaccess/database_update"
 
 LOG_FILE="/home/$USER/logs/update.log"
 PYTHON="/usr/bin/python"
@@ -27,7 +26,6 @@ touch $LOG_FILE
 log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
 }
-
 
 handle_error() {
     log_message "ERROR: $1"
@@ -62,41 +60,48 @@ wait_for_network() {
 
 
 fetch_latest_version() {
-    echo "$1" | jq -r .tag_name
+    echo "$1" | jq -r .tag_name | tr -d '[:space:]'
 }
 
 fetch_asset_url() {
-    echo "$1" | jq -r .zipball_url
+    echo "$1" | jq -r .zipball_url | tr -d '[:space:]'
+}
+
+download_update_github(){
+    local APP_DIR=$1
+    local asset_url=$2
+    local asset_name="update.zip"
+
+    mkdir -p "$APP_DIR"_temp || handle_error "Failed to create download directory."
+
+    curl -L -o "$APP_DIR"_temp/$asset_name $asset_url || { handle_error "Failed to download the update."; return; }
+    log_message "Download successful."
+
+    unzip -o "$APP_DIR"_temp/$asset_name -d "$APP_DIR"_temp >> $LOG_FILE 2>&1 || { handle_error "Failed to unzip the update package."; return; }
+    log_message "Unzip successful."
+
+    unzipped_dir=$(unzip -Z -1 "$APP_DIR"_temp/$asset_name | head -n 1 | cut -d '/' -f 1)
+    log_message "Unzipped directory: $unzipped_dir"
+
+    echo "$unzipped_dir"
 }
 
 update_application() {
     local APP_NAME=$1
     local APP_DIR=$2
-    local VERSION_FILE=$3
-    local DOWNLOAD_DIR=$4
-    local asset_url=$5
-    local asset_name="update.zip"
+    local asset_url=$3
 
     log_message "Updating $APP_NAME"
 
-    mkdir -p $DOWNLOAD_DIR || handle_error "Failed to create download directory."
-
-    curl -L -o $DOWNLOAD_DIR/$asset_name $asset_url || { handle_error "Failed to download the update."; return; }
-    log_message "Download successful."
-
-    unzip -o $DOWNLOAD_DIR/$asset_name -d $DOWNLOAD_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to unzip the update package."; return; }
-    log_message "Unzip successful."
-
-    unzipped_dir=$(unzip -Z -1 $DOWNLOAD_DIR/$asset_name | head -n 1 | cut -d '/' -f 1)
-    log_message "Unzipped directory: $unzipped_dir"
+    unzipped_dir=$(download_update_github $APP_DIR $asset_url) || { handle_error "Failed to download the update."; return; }
 
     sudo rm -r $APP_DIR/* || { handle_error "Failed to remove old version."; return; }
     log_message "Removed old version"
 
-    sudo cp -r $DOWNLOAD_DIR/$unzipped_dir/* $APP_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
+    sudo cp -r "$APP_DIR"_temp/$unzipped_dir/* $APP_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
     log_message "Copied new files to application directory."
 
-    rm -rf $DOWNLOAD_DIR || { handle_error "Failed to remove temporary download directory."; return; }
+    rm -rf "$APP_DIR"_temp || { handle_error "Failed to remove temporary download directory."; return; }
     log_message "Removed temporary download directory."
 
     if [ -e $APP_DIR/requirements.txt ]; then
@@ -104,8 +109,17 @@ update_application() {
         log_message "Installed required Python packages."
     fi
 
-    echo "$latest_version" > $VERSION_FILE
-    log_message "Update to version $latest_version completed successfully."
+}
+
+
+get_current_version(){
+    local VERSION_FILE=$1
+    if [ -f $VERSION_FILE ]; then
+        current_version=$(cat $VERSION_FILE)
+    else
+        current_version="none"
+    fi
+    echo $current_version | tr -d '[:space:]'
 }
 
 
@@ -113,12 +127,7 @@ update_merit_access_web(){
     latest_release_info=$(curl -s https://api.github.com/repos/$REPO_WEB/releases/latest)
     latest_version=$(fetch_latest_version "$latest_release_info")
     asset_url=$(fetch_asset_url "$latest_release_info")
-
-    if [ -f $VERSION_FILE_WEB ]; then
-        current_version=$(cat $VERSION_FILE_WEB)
-    else
-        current_version="none"
-    fi
+    current_version=$(get_current_version "$APP_DIR_WEB/version.txt")
 
     log_message "Current version: $current_version"
     log_message "Latest version: $latest_version"
@@ -126,10 +135,12 @@ update_merit_access_web(){
 
     if [ "$latest_version" != "$current_version" ]; then
         log_message "New version available. Updating..."
-        update_application "Merit Access Web" $APP_DIR_WEB $VERSION_FILE_WEB $DOWNLOAD_DIR_WEB "$asset_url"
+        update_application "Merit Access Web" $APP_DIR_WEB $DOWNLOAD_DIR_WEB "$asset_url"
+        log_message "Update to version $latest_version completed successfully."
     else
         log_message "You already have the latest version."
     fi
+
 }
 
 update_merit_access(){
@@ -137,12 +148,7 @@ update_merit_access(){
     latest_release_info=$(curl -s https://api.github.com/repos/$repo/releases/latest)
     latest_version=$(fetch_latest_version "$latest_release_info")
     asset_url=$(fetch_asset_url "$latest_release_info")
-
-    if [ -f $VERSION_FILE_PYTHON ]; then
-        current_version=$(cat $VERSION_FILE_PYTHON)
-    else
-        current_version="none"
-    fi
+    current_version=$(get_current_version "$APP_DIR_PYTHON/version.txt")
 
     log_message "Current version: $current_version"
     log_message "Latest version: $latest_version"
@@ -150,10 +156,33 @@ update_merit_access(){
 
     if [ "$latest_version" != "$current_version" ]; then
         log_message "New version available. Updating..."
-        update_application "Merit Access Python" $APP_DIR_PYTHON $VERSION_FILE_PYTHON $DOWNLOAD_DIR_PYTHON "$asset_url"
+        update_application "Merit Access Python" $APP_DIR_PYTHON $DOWNLOAD_DIR_PYTHON "$asset_url"
+        log_message "Update to version $latest_version completed successfully."
     else
         log_message "You already have the latest version."
     fi
+}
+
+update_database(){
+    latest_release_info=$(curl -s https://api.github.com/repos/$REPO_DATABASE/releases/latest)
+    latest_version=$(fetch_latest_version "$latest_release_info")
+    asset_url=$(fetch_asset_url "$latest_release_info")
+    current_version=$(get_current_version $DATABASE_UPDATE_DIR/version.txt)
+
+    log_message "Current version: $current_version"
+    log_message "Latest version: $latest_version"
+    log_message "Asset URL: $asset_url"
+
+    if [ "$latest_version" != "$current_version" ]; then
+        log_message "New version available. Updating..."
+        update_application "Database" $DATABASE_UPDATE_DIR $DOWNLOAD_DIR_DATABASE "$asset_url"
+        UPDATE_SQL_FILE=$DATABASE_UPDATE_DIR/update.sql
+        mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$UPDATE_SQL_FILE" || { handle_error "Failed to execute update.sql"; return; }
+        log_message "Update to version $latest_version completed successfully."
+    else
+        log_message "You already have the latest version."
+    fi
+    
 }
 
 
@@ -167,8 +196,9 @@ if [ $update_mode -eq 0 ]; then
     network_status=$?
 
     if [ $network_status -eq 0 ]; then
-        update_merit_access_web
+        update_database
         update_merit_access
+        update_merit_access_web
     fi
 fi
 
