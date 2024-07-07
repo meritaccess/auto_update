@@ -1,16 +1,24 @@
 #!/bin/bash
+# DATABASE
 DB_USER="ma"
 DB_PASS="FrameWork5414*"
 DB_NAME="MeritAccessLocal"
 USER="meritaccess"
 
+# DIRECTORIES
 APP_DIR_PYTHON="/home/$USER/merit_access"
 APP_DIR_WEB="/var/www/html"
 DATABASE_UPDATE_DIR="/home/$USER/database_update"
 
-REPO_WEB="meritaccess/html"
-REPO_DATABASE="meritaccess/database_update"
+# UPDATE SOURCE (URL or Github Repository)
+WEB_UPDATE="meritaccess/html"
+DATABASE_UPDATE="meritaccess/database_update"
 
+# REGEX
+GITHUB_REPO_REGEX="^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$"
+URL_REGEX="[(http(s)?):\/\/(www\.)?a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)"
+
+# MISCELLANEOUS
 LOG_FILE="/home/$USER/logs/update.log"
 PYTHON="/usr/bin/python"
 NETWORK_TIMEOUT=30
@@ -50,8 +58,27 @@ get_update_mode() {
     update_mode=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
     return "$update_mode"
 }
+is_github_repo() {
+    local input=$1
+    if [[ $input =~ $GITHUB_REPO_REGEX ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
 
-get_repo() {
+
+is_url() {
+    local input=$1
+    if [[ $input =~ $URL_REGEX ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+
+get_update_source() {
     local SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='appupdate';"
     repo=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
     echo "$repo"
@@ -81,7 +108,7 @@ fetch_asset_url() {
     echo "$1" | jq -r .zipball_url | tr -d '[:space:]'
 }
 
-download_update_github(){
+download_update(){
     local APP_DIR=$1
     local asset_url=$2
     local asset_name="update.zip"
@@ -100,6 +127,8 @@ download_update_github(){
     echo "$unzipped_dir"
 }
 
+
+
 install_update() {
     local APP_NAME=$1
     local APP_DIR=$2
@@ -107,7 +136,7 @@ install_update() {
 
     log_message "Updating $APP_NAME"
 
-    unzipped_dir=$(download_update_github $APP_DIR $asset_url) || { handle_error "Failed to download the update."; return; }
+    unzipped_dir=$(download_update $APP_DIR $asset_url) || { handle_error "Failed to download the update."; return; }
 
     if [ "$(ls -A $APP_DIR)" ]; then
         rm -r $APP_DIR/* || { handle_error "Failed to remove old version."; return; }
@@ -143,16 +172,30 @@ get_current_version(){
 
 update_version() {
     local app_name=$1
-    local repo=$2
+    local update_source=$2
     local app_dir=$3
     local download_dir=$4
     local extra_update_command=$5
+    
+    if is_github_repo $update_source; then
+        log_message "Downloading from github repository"
+        latest_release_info=$(curl -s https://api.github.com/repos/$update_source/releases/latest)
+        latest_version=$(fetch_latest_version "$latest_release_info")
+        asset_url=$(fetch_asset_url "$latest_release_info")
 
-    latest_release_info=$(curl -s https://api.github.com/repos/$repo/releases/latest)
-    latest_version=$(fetch_latest_version "$latest_release_info")
-    asset_url=$(fetch_asset_url "$latest_release_info")
+    elif is_url $update_source; then
+        # TO DO
+        log_message "Downloading from URL"
+        latest_version=""
+        asset_url=""
+        return 0
+
+    else
+        log_message "Wrong update source. Please provide a valid GitHub repository or URL."
+        return 1
+    fi
+
     current_version=$(get_current_version "$app_dir/version.txt")
-
     log_message "Current version: $current_version"
     log_message "Latest version: $latest_version"
     log_message "Asset URL: $asset_url"
@@ -168,19 +211,18 @@ update_version() {
 }
 
 update_merit_access_web() {
-    update_version "Merit Access Web" "$REPO_WEB" "$APP_DIR_WEB" "$DOWNLOAD_DIR_WEB" ""
+    update_version "Merit Access Web" "$WEB_UPDATE" "$APP_DIR_WEB" "$DOWNLOAD_DIR_WEB" ""
 }
 
 update_merit_access() {
-    local repo=$(get_repo)
-    update_version "Merit Access Python" "$repo" "$APP_DIR_PYTHON" "$DOWNLOAD_DIR_PYTHON" ""
+    local update_source=$(get_update_source)
+    update_version "Merit Access Python" "$update_source" "$APP_DIR_PYTHON" "$DOWNLOAD_DIR_PYTHON" ""
 }
 
 update_database() {
     local mysql_command='mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$DATABASE_UPDATE_DIR/update.sql" || { handle_error "Failed to execute update.sql"; return; }'
-    update_version "Database" "$REPO_DATABASE" "$DATABASE_UPDATE_DIR" "$DOWNLOAD_DIR_DATABASE" "$mysql_command"
+    update_version "Database" "$DATABASE_UPDATE" "$DATABASE_UPDATE_DIR" "$DOWNLOAD_DIR_DATABASE" "$mysql_command"
 }
-
 
 # Wiegand device nodes
 create_device_node /dev/wie1 240 0
@@ -205,4 +247,4 @@ if [ $update_mode -eq 0 ]; then
 fi
 
 # Run Merit Access App
-$PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+# $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
