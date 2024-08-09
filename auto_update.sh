@@ -11,12 +11,14 @@ APP_DIR_WEB="/var/www/html"
 DATABASE_UPDATE_DIR="/home/$USER/database_update"
 
 # UPDATE SOURCE (URL or Github Repository)
-WEB_UPDATE="meritaccess/html"
-DATABASE_UPDATE="meritaccess/database_update"
+MERIT_ACCESS_UPDATE="merit_access"
+WEB_UPDATE="html"
+DATABASE_UPDATE="database_update"
 
 # REGEX
 GITHUB_REPO_REGEX="^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$"
-URL_REGEX="[(http(s)?):\/\/(www\.)?a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)"
+URL_REGEX="[(http(s)?):\/\/(www\.)?a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b(:[0-9]{1,5})?([-a-zA-Z0-9@:%_\+.~#?&\/=]*)"
+IP_REGEX="^(http(s)?:\/\/)?((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[0-9]{1,2})\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[0-9]{1,2})(:[0-9]{1,5})?(\/[a-zA-Z0-9\$\-\_\.\+\!\*\'\(\)\,\/]*)?$"
 
 # MISCELLANEOUS
 LOG_FILE="/home/$USER/logs/update.log"
@@ -58,13 +60,14 @@ get_update_mode() {
     update_mode=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
     return "$update_mode"
 }
+
+
 is_github_repo() {
     local input=$1
     if [[ $input =~ $GITHUB_REPO_REGEX ]]; then
         return 0
-    else
-        return 1
     fi
+    return 1
 }
 
 
@@ -72,9 +75,10 @@ is_url() {
     local input=$1
     if [[ $input =~ $URL_REGEX ]]; then
         return 0
-    else
-        return 1
+    elif [[ $input =~ $IP_REGEX ]]; then
+        return 0
     fi
+    return 1
 }
 
 
@@ -109,19 +113,19 @@ fetch_asset_url() {
 }
 
 download_update(){
-    local APP_DIR=$1
+    local app_dir=$1
     local asset_url=$2
     local asset_name="update.zip"
 
-    mkdir -p "$APP_DIR"_temp || handle_error "Failed to create download directory."
+    mkdir -p "$app_dir"_temp || { handle_error "Failed to create download directory."; return 1; }
 
-    curl -L -o "$APP_DIR"_temp/$asset_name $asset_url || { handle_error "Failed to download the update."; return; }
+    curl -L -o "$app_dir"_temp/$asset_name $asset_url || { handle_error "Failed to download the update."; return 1; }
     log_message "Download successful."
 
-    unzip -o "$APP_DIR"_temp/$asset_name -d "$APP_DIR"_temp >> $LOG_FILE 2>&1 || { handle_error "Failed to unzip the update package."; return; }
+    unzip -o "$app_dir"_temp/$asset_name -d "$app_dir"_temp >> $LOG_FILE 2>&1 || { handle_error "Failed to unzip the update package."; return 1; }
     log_message "Unzip successful."
 
-    unzipped_dir=$(unzip -Z -1 "$APP_DIR"_temp/$asset_name | head -n 1 | cut -d '/' -f 1)
+    unzipped_dir=$(unzip -Z -1 "$app_dir"_temp/$asset_name | head -n 1 | cut -d '/' -f 1) || { handle_error "Failed to get unzipped directory"; return 1; }
     log_message "Unzipped directory: $unzipped_dir"
 
     echo "$unzipped_dir"
@@ -130,31 +134,37 @@ download_update(){
 
 
 install_update() {
-    local APP_NAME=$1
-    local APP_DIR=$2
+    local app_name=$1
+    local app_dir=$2
     local asset_url=$3
 
-    log_message "Updating $APP_NAME"
+    log_message "Updating $app_name"
 
-    unzipped_dir=$(download_update $APP_DIR $asset_url) || { handle_error "Failed to download the update."; return; }
+    unzipped_dir=$(download_update $app_dir $asset_url) || { handle_error "Failed to download the update."; return 1; }
+    if [ -z "$unzipped_dir" ]; then
+        handle_error "Failed to get unzipped directory."
+        return 1
+    fi
 
-    if [ "$(ls -A $APP_DIR)" ]; then
-        rm -r $APP_DIR/* || { handle_error "Failed to remove old version."; return; }
+
+    if [ "$(ls -A $app_dir)" ]; then
+        rm -rf "$app_dir"/{*,.[^.]*,..?*} || { handle_error "Failed to remove old version."; return 1; }
         log_message "Removed old version"
     else
         log_message "No old version installed"
     fi
 
-    cp -r "$APP_DIR"_temp/$unzipped_dir/* $APP_DIR >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
+    cp -r "$app_dir"_temp/$unzipped_dir/* $app_dir >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
     log_message "Copied new files to application directory."
 
-    rm -rf "$APP_DIR"_temp || { handle_error "Failed to remove temporary download directory."; return; }
+    rm -rf "$app_dir"_temp || { handle_error "Failed to remove temporary download directory."; return 1; }
     log_message "Removed temporary download directory."
 
-    if [ -e $APP_DIR/requirements.txt ]; then
-        pip install -r $APP_DIR/requirements.txt || { handle_error "Failed to install required Python packages."; return; }
+    if [ -e $app_dir/requirements.txt ]; then
+        pip install -r $app_dir/requirements.txt || { handle_error "Failed to install required Python packages."; return 1; }
         log_message "Installed required Python packages."
     fi
+    return 0
 
 }
 
@@ -184,12 +194,22 @@ update_version() {
         asset_url=$(fetch_asset_url "$latest_release_info")
 
     elif is_url $update_source; then
-        # TO DO
         log_message "Downloading from URL"
-        latest_version=""
-        asset_url=""
-        return 0
-
+        # check if version.txt exists
+        if curl --output /dev/null --silent --head --fail "$update_source/version.txt"; then
+            latest_version=$(curl -L -s $update_source/version.txt)
+        else
+            log_message "Update URL for $app_name not reachable. Add version.txt"
+            return 1
+        fi
+        
+        # check if update.zip exists
+        if curl --output /dev/null --silent --head --fail "$update_source/update.zip"; then
+            asset_url=$update_source/update.zip
+        else
+            log_message "Update URL for $app_name not reachable. Add update.zip"
+            return 1
+        fi
     else
         log_message "Wrong update source. Please provide a valid GitHub repository or URL."
         return 1
@@ -202,7 +222,11 @@ update_version() {
 
     if [ "$latest_version" != "$current_version" ]; then
         log_message "New version available. Updating..."
-        install_update "$app_name" $app_dir $download_dir "$asset_url"
+        update_successful=$(install_update "$app_name" $app_dir $download_dir "$asset_url")
+        if [ -z "$update_successful" ] || [ "$update_successful" -ne 0 ]; then
+            log_message "Update was NOT successful"
+            return 1
+        fi
         eval "$extra_update_command"
         log_message "Update to version $latest_version completed successfully."
     else
@@ -211,17 +235,16 @@ update_version() {
 }
 
 update_merit_access_web() {
-    update_version "Merit Access Web" "$WEB_UPDATE" "$APP_DIR_WEB" "$DOWNLOAD_DIR_WEB" ""
+    update_version "Merit Access Web" "$update_source/$WEB_UPDATE" "$APP_DIR_WEB" "$DOWNLOAD_DIR_WEB" ""
 }
 
 update_merit_access() {
-    local update_source=$(get_update_source)
-    update_version "Merit Access Python" "$update_source" "$APP_DIR_PYTHON" "$DOWNLOAD_DIR_PYTHON" ""
+    update_version "Merit Access Python" "$update_source/$MERIT_ACCESS_UPDATE" "$APP_DIR_PYTHON" "$DOWNLOAD_DIR_PYTHON" ""
 }
 
 update_database() {
-    local mysql_command='mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$DATABASE_UPDATE_DIR/update.sql" || { handle_error "Failed to execute update.sql"; return; }'
-    update_version "Database" "$DATABASE_UPDATE" "$DATABASE_UPDATE_DIR" "$DOWNLOAD_DIR_DATABASE" "$mysql_command"
+    local mysql_command='mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$DATABASE_UPDATE_DIR/update.sql"' || { handle_error "Failed to execute update.sql"; return 1; }
+    update_version "Database" "$update_source/$DATABASE_UPDATE" "$DATABASE_UPDATE_DIR" "$DOWNLOAD_DIR_DATABASE" "$mysql_command"
 }
 
 # Wiegand device nodes
@@ -240,6 +263,7 @@ if [ $update_mode -eq 0 ]; then
     network_status=$?
 
     if [ $network_status -eq 0 ]; then
+        update_source=$(get_update_source)
         update_database
         update_merit_access
         update_merit_access_web
@@ -247,4 +271,4 @@ if [ $update_mode -eq 0 ]; then
 fi
 
 # Run Merit Access App
-# $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+$PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
