@@ -205,4 +205,4 @@ if [ $update_mode -eq 0 ]; then
 fi
 
 # Run Merit Access App
-$PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+# $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
