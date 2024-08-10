@@ -9,11 +9,13 @@ USER="meritaccess"
 APP_DIR_PYTHON="/home/$USER/merit_access"
 APP_DIR_WEB="/var/www/html"
 DATABASE_UPDATE_DIR="/home/$USER/database_update"
+EXTRA_SCRIPT_DIR="/home/$USER/extra_script"
 
 # UPDATE SOURCE (URL or Github Repository)
 MERIT_ACCESS_UPDATE="merit_access"
 WEB_UPDATE="html"
 DATABASE_UPDATE="database_update"
+EXTRA_SCRIPT="extra_script"
 
 # REGEX
 GITHUB_REPO_REGEX="^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$"
@@ -24,6 +26,7 @@ IP_REGEX="^(http(s)?:\/\/)?((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[0-9]{1,2})\.){3}(25[
 LOG_FILE="/home/$USER/logs/update.log"
 PYTHON="/usr/bin/python"
 NETWORK_TIMEOUT=30
+UPDATE_SUCCESSFUL=1
 
 
 create_device_node(){
@@ -43,6 +46,7 @@ create_directories(){
     mkdir -p $APP_DIR_PYTHON
     mkdir -p $APP_DIR_WEB
     mkdir -p $DATABASE_UPDATE_DIR
+    mkdir -p $EXTRA_SCRIPT_DIR
     touch $LOG_FILE
 }
 
@@ -164,6 +168,7 @@ install_update() {
         pip install -r $app_dir/requirements.txt || { handle_error "Failed to install required Python packages."; return 1; }
         log_message "Installed required Python packages."
     fi
+    UPDATE_SUCCESSFUL=0
     return 0
 
 }
@@ -184,8 +189,7 @@ update_version() {
     local app_name=$1
     local update_source=$2
     local app_dir=$3
-    local download_dir=$4
-    local extra_update_command=$5
+    local extra_update_command=$4
     
     if is_github_repo $update_source; then
         log_message "Downloading from github repository"
@@ -222,8 +226,8 @@ update_version() {
 
     if [ "$latest_version" != "$current_version" ]; then
         log_message "New version available. Updating..."
-        update_successful=$(install_update "$app_name" $app_dir $download_dir "$asset_url")
-        if [ -z "$update_successful" ] || [ "$update_successful" -ne 0 ]; then
+        install_update "$app_name" $app_dir "$asset_url"
+        if [ $UPDATE_SUCCESSFUL -ne 0 ]; then
             log_message "Update was NOT successful"
             return 1
         fi
@@ -235,16 +239,24 @@ update_version() {
 }
 
 update_merit_access_web() {
-    update_version "Merit Access Web" "$update_source/$WEB_UPDATE" "$APP_DIR_WEB" "$DOWNLOAD_DIR_WEB" ""
+    update_version "Merit Access Web" "$update_source/$WEB_UPDATE" "$APP_DIR_WEB" ""
+    UPDATE_SUCCESSFUL=1
 }
 
 update_merit_access() {
-    update_version "Merit Access Python" "$update_source/$MERIT_ACCESS_UPDATE" "$APP_DIR_PYTHON" "$DOWNLOAD_DIR_PYTHON" ""
+    update_version "Merit Access Python" "$update_source/$MERIT_ACCESS_UPDATE" "$APP_DIR_PYTHON" ""
+    UPDATE_SUCCESSFUL=1
 }
 
 update_database() {
     local mysql_command='mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$DATABASE_UPDATE_DIR/update.sql"' || { handle_error "Failed to execute update.sql"; return 1; }
-    update_version "Database" "$update_source/$DATABASE_UPDATE" "$DATABASE_UPDATE_DIR" "$DOWNLOAD_DIR_DATABASE" "$mysql_command"
+    update_version "Database" "$update_source/$DATABASE_UPDATE" "$DATABASE_UPDATE_DIR" "$mysql_command"
+    UPDATE_SUCCESSFUL=1
+}
+
+update_extra_script() {
+    update_version "Extra Script" "$update_source/$EXTRA_SCRIPT" "$EXTRA_SCRIPT_DIR" ""
+    UPDATE_SUCCESSFUL=1
 }
 
 # Wiegand device nodes
@@ -267,8 +279,15 @@ if [ $update_mode -eq 0 ]; then
         update_database
         update_merit_access
         update_merit_access_web
+        update_extra_script
     fi
 fi
 
+# Execute extra script
+if [ -e "$EXTRA_SCRIPT_DIR/extra_script.sh" ]; then
+    chmod +x $EXTRA_SCRIPT_DIR/extra_script.sh
+    sudo $EXTRA_SCRIPT_DIR/extra_script.sh
+fi
+
 # Run Merit Access App
-$PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+# $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
