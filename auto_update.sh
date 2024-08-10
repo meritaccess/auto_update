@@ -290,4 +290,4 @@ if [ -e "$EXTRA_SCRIPT_DIR/extra_script.sh" ]; then
 fi
 
 # Run Merit Access App
-# $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+$PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
