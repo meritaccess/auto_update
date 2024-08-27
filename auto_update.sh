@@ -271,11 +271,17 @@ log_message "Update mode: $update_mode"
 
 if [ $update_mode -eq 0 ]; then
 
-    wait_for_network
-    network_status=$?
+        update_source=$(get_update_source)
+
+        if is_github_repo $update_source/test; then
+            wait_for_network
+            network_status=$?
+        else
+            network_status=0
+        fi
 
     if [ $network_status -eq 0 ]; then
-        update_source=$(get_update_source)
+        
         update_database
         update_merit_access
         update_merit_access_web
