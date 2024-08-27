@@ -92,18 +92,41 @@ get_update_source() {
     echo "$repo"
 }
 
+
+split_url() {
+    local full_url=$1
+    local url="${full_url%%:*}"
+    local port="${full_url##*:}"
+    if [ "$url" = "$port" ]; then
+        port=""
+    fi
+    echo "$url" "$port"
+}
+
+check_network() {
+    local url=$1
+    local port=$2
+
+    if [ -z "$port" ]; then
+        ping -c 1 -W 1 "$url" &> /dev/null
+    else
+        nc -z "$url" "$port" &> /dev/null
+    fi
+}
+
 wait_for_network() {
+    read -r url port <<< "$(split_url $1)"
     log_message "Starting network check."
     SECONDS=0
-    while ! ping -c 1 -W 1 github.com &> /dev/null || ! nc -zv github.com 443 &> /dev/null; do
+    while ! check_network "$url" "$port"; do
         if [ $SECONDS -ge $NETWORK_TIMEOUT ]; then
-            handle_error "Network timeout after $NETWORK_TIMEOUT seconds or port 443 is blocked."
+            handle_error "Network timeout after $NETWORK_TIMEOUT seconds. Maybe port $port is not open."
             return 1
         fi
-        log_message "Waiting for network and port 443 availability..."
+        log_message "Waiting for network..."
         sleep 5
     done
-    log_message "Network and port 443 are up."
+    log_message "Network is up."
     return 0
 }
 
@@ -274,10 +297,11 @@ if [ $update_mode -eq 0 ]; then
         update_source=$(get_update_source)
 
         if is_github_repo $update_source/test; then
-            wait_for_network
+            wait_for_network "github.com":443
             network_status=$?
         else
-            network_status=0
+            wait_for_network $update_source
+            network_status=$?
         fi
 
     if [ $network_status -eq 0 ]; then
@@ -296,4 +320,4 @@ if [ -e "$EXTRA_SCRIPT_DIR/extra_script.sh" ]; then
 fi
 
 # Run Merit Access App
-$PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+# $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
