@@ -4,12 +4,14 @@ DB_USER="ma"
 DB_PASS="FrameWork5414*"
 DB_NAME="MeritAccessLocal"
 USER="meritaccess"
+HOSTNAME=$(hostname)
 
 # DIRECTORIES
 APP_DIR_PYTHON="/home/$USER/merit_access"
 APP_DIR_WEB="/var/www/html"
 DATABASE_UPDATE_DIR="/home/$USER/database_update"
 EXTRA_SCRIPT_DIR="/home/$USER/extra_script"
+AFTER_IMAGE="/home/$USER/after-image.sh"
 
 # UPDATE SOURCE (URL or Github Repository)
 MERIT_ACCESS_UPDATE="merit_access"
@@ -27,6 +29,29 @@ LOG_FILE="/home/$USER/logs/update.log"
 PYTHON="/usr/bin/python"
 NETWORK_TIMEOUT=30
 UPDATE_SUCCESSFUL=1
+
+# LED pins
+SYS_LED_RED=0
+SYS_LED_GREEN=1
+SYS_LED_BLUE=2
+
+set_led_color() {
+  local red_value=$1
+  local green_value=$2
+  local blue_value=$3
+
+  pigs p $SYS_LED_RED $red_value
+  pigs p $SYS_LED_GREEN $green_value
+  pigs p $SYS_LED_BLUE $blue_value
+}
+
+execute_script(){
+    local script=$1
+    if [ -e "$script" ]; then
+        chmod +x $script
+        sudo $script
+    fi
+}
 
 
 create_device_node(){
@@ -282,6 +307,15 @@ update_extra_script() {
     UPDATE_SUCCESSFUL=1
 }
 
+# Run after-image
+if [ "$HOSTNAME" == "cm4" ]; then
+    set_led_color 255 0 0
+    execute_script $AFTER_IMAGE
+    set_led_color 255 255 255
+fi
+
+
+set_led_color 0 0 255
 # Wiegand device nodes
 create_device_node /dev/wie1 240 0
 create_device_node /dev/wie2 239 0
@@ -305,7 +339,6 @@ if [ $update_mode -eq 0 ]; then
         fi
 
     if [ $network_status -eq 0 ]; then
-        
         update_database
         update_merit_access
         update_merit_access_web
@@ -314,10 +347,8 @@ if [ $update_mode -eq 0 ]; then
 fi
 
 # Execute extra script
-if [ -e "$EXTRA_SCRIPT_DIR/extra_script.sh" ]; then
-    chmod +x $EXTRA_SCRIPT_DIR/extra_script.sh
-    sudo $EXTRA_SCRIPT_DIR/extra_script.sh
-fi
+execute_script "$EXTRA_SCRIPT_DIR/extra_script.sh"
 
+set_led_color 255 255 255
 # Run Merit Access App
 $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
