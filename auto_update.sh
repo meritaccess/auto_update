@@ -213,7 +213,7 @@ install_update() {
     log_message "Removed temporary download directory."
 
     if [ -e $app_dir/requirements.txt ]; then
-        pip install -r $app_dir/requirements.txt || { handle_error "Failed to install required Python packages."; return 1; }
+        pip install --no-index --find-links=$app_dir/pip_packages/ -r $app_dir/requirements.txt || { handle_error "Failed to install required Python packages."; return 1; }
         log_message "Installed required Python packages."
     fi
     UPDATE_SUCCESSFUL=0
