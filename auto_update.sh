@@ -29,30 +29,33 @@ LOG_FILE="/home/$USER/logs/update.log"
 PYTHON="/usr/bin/python"
 NETWORK_TIMEOUT=30
 UPDATE_SUCCESSFUL=1
+FACTORY_DEFAULT_DIR="/home/$USER/factory_default"
+HOLD_CONFIG_BTN_TIME_S=10
 
-# LED pins
+# PINS
 SYS_LED_RED=0
 SYS_LED_GREEN=1
 SYS_LED_BLUE=2
+CONFIG_BTN=3
 
+# UPDATE
 set_led_color() {
   local red_value=$1
   local green_value=$2
   local blue_value=$3
 
-  pigs p $SYS_LED_RED $red_value
-  pigs p $SYS_LED_GREEN $green_value
-  pigs p $SYS_LED_BLUE $blue_value
+  pigs p $SYS_LED_RED "$red_value"
+  pigs p $SYS_LED_GREEN "$green_value"
+  pigs p $SYS_LED_BLUE "$blue_value"
 }
 
 execute_script(){
     local script=$1
     if [ -e "$script" ]; then
-        chmod +x $script
-        sudo $script
+        chmod +x "$script"
+        sudo "$script"
     fi
 }
-
 
 create_device_node(){
     local device_name=$1
@@ -65,7 +68,6 @@ create_device_node(){
     fi
 }
 
-
 create_directories(){
     mkdir -p /home/$USER/logs
     mkdir -p $APP_DIR_PYTHON
@@ -74,7 +76,6 @@ create_directories(){
     mkdir -p $EXTRA_SCRIPT_DIR
     touch $LOG_FILE
 }
-
 
 log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
@@ -86,10 +87,9 @@ handle_error() {
 
 get_update_mode() {
     local SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='update_mode';"
-    update_mode=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
+    update_mode=$(mysql -u$DB_USER -p"$DB_PASS" $DB_NAME -se "$SQL_QUERY")
     return "$update_mode"
 }
-
 
 is_github_repo() {
     local input=$1
@@ -98,7 +98,6 @@ is_github_repo() {
     fi
     return 1
 }
-
 
 is_url() {
     local input=$1
@@ -110,13 +109,11 @@ is_url() {
     return 1
 }
 
-
 get_update_source() {
     local SQL_QUERY="SELECT VALUE AS v FROM ConfigDU WHERE property='appupdate';"
-    repo=$(mysql -u$DB_USER -p$DB_PASS $DB_NAME -se "$SQL_QUERY")
+    repo=$(mysql -u$DB_USER -p"$DB_PASS" $DB_NAME -se "$SQL_QUERY")
     echo "$repo"
 }
-
 
 split_url() {
     local full_url=$1
@@ -140,7 +137,7 @@ check_network() {
 }
 
 wait_for_network() {
-    read -r url port <<< "$(split_url $1)"
+    read -r url port <<< "$(split_url "$1")"
     log_message "Starting network check."
     SECONDS=0
     while ! check_network "$url" "$port"; do
@@ -154,7 +151,6 @@ wait_for_network() {
     log_message "Network is up."
     return 0
 }
-
 
 fetch_latest_version() {
     echo "$1" | jq -r .tag_name | tr -d '[:space:]'
@@ -171,7 +167,7 @@ download_update(){
 
     mkdir -p "$app_dir"_temp || { handle_error "Failed to create download directory."; return 1; }
 
-    curl -L -o "$app_dir"_temp/$asset_name $asset_url || { handle_error "Failed to download the update."; return 1; }
+    curl -L -o "$app_dir"_temp/$asset_name "$asset_url" || { handle_error "Failed to download the update."; return 1; }
     log_message "Download successful."
 
     unzip -o "$app_dir"_temp/$asset_name -d "$app_dir"_temp >> $LOG_FILE 2>&1 || { handle_error "Failed to unzip the update package."; return 1; }
@@ -183,8 +179,6 @@ download_update(){
     echo "$unzipped_dir"
 }
 
-
-
 install_update() {
     local app_name=$1
     local app_dir=$2
@@ -192,28 +186,27 @@ install_update() {
 
     log_message "Updating $app_name"
 
-    unzipped_dir=$(download_update $app_dir $asset_url) || { handle_error "Failed to download the update."; return 1; }
+    unzipped_dir=$(download_update "$app_dir" "$asset_url") || { handle_error "Failed to download the update."; return 1; }
     if [ -z "$unzipped_dir" ]; then
         handle_error "Failed to get unzipped directory."
         return 1
     fi
 
-
-    if [ "$(ls -A $app_dir)" ]; then
+    if [ "$(ls -A "$app_dir")" ]; then
         rm -rf "$app_dir"/{*,.[^.]*,..?*} || { handle_error "Failed to remove old version."; return 1; }
         log_message "Removed old version"
     else
         log_message "No old version installed"
     fi
 
-    cp -r "$app_dir"_temp/$unzipped_dir/* $app_dir >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
+    cp -r "$app_dir"_temp/"$unzipped_dir"/* "$app_dir" >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
     log_message "Copied new files to application directory."
 
     rm -rf "$app_dir"_temp || { handle_error "Failed to remove temporary download directory."; return 1; }
     log_message "Removed temporary download directory."
 
-    if [ -e $app_dir/requirements.txt ]; then
-        pip install --no-index --find-links=$app_dir/pip_packages/ -r $app_dir/requirements.txt || { handle_error "Failed to install required Python packages."; return 1; }
+    if [ -e "$app_dir"/requirements.txt ]; then
+        pip install --no-index --find-links="$app_dir"/pip_packages/ -r "$app_dir"/requirements.txt || { handle_error "Failed to install required Python packages."; return 1; }
         log_message "Installed required Python packages."
     fi
     UPDATE_SUCCESSFUL=0
@@ -221,17 +214,15 @@ install_update() {
 
 }
 
-
 get_current_version(){
     local VERSION_FILE=$1
-    if [ -f $VERSION_FILE ]; then
-        current_version=$(cat $VERSION_FILE)
+    if [ -f "$VERSION_FILE" ]; then
+        current_version=$(cat "$VERSION_FILE")
     else
         current_version="none"
     fi
-    echo $current_version | tr -d '[:space:]'
+    echo "$current_version" | tr -d '[:space:]'
 }
-
 
 update_version() {
     local app_name=$1
@@ -239,17 +230,17 @@ update_version() {
     local app_dir=$3
     local extra_update_command=$4
     
-    if is_github_repo $update_source; then
+    if is_github_repo "$update_source"; then
         log_message "Downloading from github repository"
-        latest_release_info=$(curl -s https://api.github.com/repos/$update_source/releases/latest)
+        latest_release_info=$(curl -s https://api.github.com/repos/"$update_source"/releases/latest)
         latest_version=$(fetch_latest_version "$latest_release_info")
         asset_url=$(fetch_asset_url "$latest_release_info")
 
-    elif is_url $update_source; then
+    elif is_url "$update_source"; then
         log_message "Downloading from URL"
         # check if version.txt exists
         if curl --output /dev/null --silent --head --fail "$update_source/version.txt"; then
-            latest_version=$(curl -L -s $update_source/version.txt)
+            latest_version=$(curl -L -s "$update_source"/version.txt)
         else
             log_message "Update URL for $app_name not reachable. Add version.txt"
             return 1
@@ -274,7 +265,7 @@ update_version() {
 
     if [ "$latest_version" != "$current_version" ]; then
         log_message "New version available. Updating..."
-        install_update "$app_name" $app_dir "$asset_url"
+        install_update "$app_name" "$app_dir" "$asset_url"
         if [ $UPDATE_SUCCESSFUL -ne 0 ]; then
             log_message "Update was NOT successful"
             return 1
@@ -307,13 +298,135 @@ update_extra_script() {
     UPDATE_SUCCESSFUL=1
 }
 
+# FACTORY RESET
+read_pin() {
+    local pin=$1
+    pigs r "$pin"
+}
+
+detect_factory_reset() {
+    local hold=${HOLD_CONFIG_BTN_TIME_S:-10}
+    local pin="$CONFIG_BTN"
+    
+    if [ "$(read_pin "$pin")" -ne 0 ]; then
+        log_message "No factory reset detected"
+        return 1
+    fi
+    
+    local start now elapsed
+    start=$(date +%s)
+    
+    while true; do
+        if [ "$(read_pin "$pin")" -ne 0 ]; then
+            log_message "No factory reset detected"
+            return 1
+        fi
+        
+        now=$(date +%s)
+        elapsed=$(( now - start ))
+        
+        if [ "$elapsed" -ge "$hold" ]; then
+            set_led_color 255 0 0
+            sleep 0.2
+            set_led_color 0 0 0
+            sleep 0.2
+            set_led_color 255 0 0
+            sleep 0.2
+            set_led_color 0 0 0
+            sleep 0.2
+            set_led_color 255 0 0
+            sleep 0.2
+            set_led_color 0 0 0
+            sleep 0.2
+            set_led_color 255 0 0
+        
+            factory_reset
+            return 0
+        fi
+        
+        sleep 0.1
+    done
+}
+
+install_factory_default() {
+    local app_name=$1
+    local app_dir=$2
+    local factory_default=$3
+
+    log_message "Installing factory default $app_name"
+
+    if [ -z "$factory_default" ]; then
+        handle_error "Failed to get factory_default directory."
+        return 1
+    fi
+
+    cp -r "$factory_default"/* "$app_dir" >> $LOG_FILE 2>&1 || { handle_error "Failed to copy new files to application directory."; return; }
+    log_message "Copied new files to application directory."
+
+    if [ -e "$app_dir"/requirements.txt ]; then
+        pip install --no-index --find-links="$app_dir"/pip_packages/ -r "$app_dir"/requirements.txt || { handle_error "Failed to install required Python packages."; return 1; }
+        log_message "Installed required Python packages."
+    fi
+    return 0
+}
+
+recreate_dirs() {
+    log_message "Deleting directories"
+    rm -rf $APP_DIR_PYTHON $APP_DIR_WEB $DATABASE_UPDATE_DIR $EXTRA_SCRIPT_DIR || { handle_error "Failed to delete directories"; }
+    log_message "Creating directories"
+    mkdir -p $APP_DIR_PYTHON $APP_DIR_WEB $DATABASE_UPDATE_DIR $EXTRA_SCRIPT_DIR || { handle_error "Failed to create directories"; }
+}
+
+factory_reset() {
+    log_message "Starting factory reset"
+
+    recreate_dirs
+
+    # Database
+    log_message "Dropping database"
+    if ! [ -z "$(mariadb -u"$DB_USER" -p"$DB_PASS" -e "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$DB_NAME';")" ]; then
+    mariadb -u"$DB_USER" -p"$DB_PASS" -e "DROP DATABASE $DB_NAME;" || { handle_error "Failed to drop database"; }
+    else
+        log_message "$DB_NAME does not exist, skipping DROP"
+    fi
+    
+    install_factory_default "Database" $DATABASE_UPDATE_DIR "$FACTORY_DEFAULT_DIR/database_update"
+    log_message "Creating database"
+
+    ###remove
+    mariadb -u"$DB_USER" -p"$DB_PASS" -e "CREATE DATABASE MeritAccessLocal" || { handle_error "Failed to run create.sql"; }
+    mariadb -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" < /home/meritaccess/backup.sql || { handle_error "Failed to run create.sql"; }
+    ###
+
+    # mariadb -u"$DB_USER" -p"$DB_PASS" < $DATABASE_UPDATE_DIR/create.sql || { handle_error "Failed to run create.sql"; }
+    # log_message "Updating database"
+    # mariadb -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" < $DATABASE_UPDATE_DIR/update.sql || { handle_error "Failed to run update.sql"; }
+
+    # Merit Access
+    install_factory_default "Merit Access" $APP_DIR_PYTHON "$FACTORY_DEFAULT_DIR/merit_access"
+    
+    # HTML
+    install_factory_default "HTML" $APP_DIR_WEB "$FACTORY_DEFAULT_DIR/html"
+
+    # Extra Script
+    install_factory_default "Extra Script" $EXTRA_SCRIPT_DIR "$FACTORY_DEFAULT_DIR/extra_script"
+
+    log_message "Finished factory reset"
+}
+
+
+# Check factory reset
+set_led_color 255 255 255
+pigs m "$CONFIG_BTN" r       # set as input
+pigs pud "$CONFIG_BTN" u     # enable pull-up
+detect_factory_reset
+
 # Run after-image
-if [ "$HOSTNAME" == "cm4" ]; then
+if [ "$HOSTNAME" == "cm4" ] || [ "$HOSTNAME" == "MDUD83ADD06DB00" ]; then
     set_led_color 255 0 0
     execute_script $AFTER_IMAGE
     set_led_color 255 255 255
 fi
-
 
 set_led_color 0 0 255
 # Wiegand device nodes
@@ -330,11 +443,11 @@ if [ $update_mode -eq 0 ]; then
 
         update_source=$(get_update_source)
 
-        if is_github_repo $update_source/test; then
+        if is_github_repo "$update_source"/test; then
             wait_for_network "github.com":443
             network_status=$?
         else
-            wait_for_network $update_source
+            wait_for_network "$update_source"
             network_status=$?
         fi
 
@@ -351,4 +464,4 @@ execute_script "$EXTRA_SCRIPT_DIR/extra_script.sh"
 
 set_led_color 255 255 255
 # Run Merit Access App
-$PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+# PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
