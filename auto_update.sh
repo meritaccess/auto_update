@@ -31,6 +31,7 @@ NETWORK_TIMEOUT=30
 UPDATE_SUCCESSFUL=1
 FACTORY_DEFAULT_DIR="/home/$USER/factory_default"
 HOLD_CONFIG_BTN_TIME_S=10
+FACTORY_RESET=0
 
 # PINS
 SYS_LED_RED=0
@@ -321,25 +322,19 @@ detect_factory_reset() {
             log_message "No factory reset detected"
             return 1
         fi
-        
         now=$(date +%s)
         elapsed=$(( now - start ))
         
         if [ "$elapsed" -ge "$hold" ]; then
+            FACTORY_RESET=1
+            for _ in $(seq 1 3); do
+                set_led_color 255 0 0
+                sleep 0.2
+                set_led_color 0 0 0
+                sleep 0.2
+            done
+
             set_led_color 255 0 0
-            sleep 0.2
-            set_led_color 0 0 0
-            sleep 0.2
-            set_led_color 255 0 0
-            sleep 0.2
-            set_led_color 0 0 0
-            sleep 0.2
-            set_led_color 255 0 0
-            sleep 0.2
-            set_led_color 0 0 0
-            sleep 0.2
-            set_led_color 255 0 0
-        
             factory_reset
             return 0
         fi
@@ -384,23 +379,18 @@ factory_reset() {
 
     # Database
     log_message "Dropping database"
-    if ! [ -z "$(mariadb -u"$DB_USER" -p"$DB_PASS" -e "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$DB_NAME';")" ]; then
-    mariadb -u"$DB_USER" -p"$DB_PASS" -e "DROP DATABASE $DB_NAME;" || { handle_error "Failed to drop database"; }
+    if ! [ -z "$(mysql -u"$DB_USER" -p"$DB_PASS" -e "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$DB_NAME';")" ]; then
+    mysql -u"$DB_USER" -p"$DB_PASS" -e "DROP DATABASE $DB_NAME;" || { handle_error "Failed to drop database"; }
     else
         log_message "$DB_NAME does not exist, skipping DROP"
     fi
     
     install_factory_default "Database" $DATABASE_UPDATE_DIR "$FACTORY_DEFAULT_DIR/database_update"
     log_message "Creating database"
-
-    ###remove
-    mariadb -u"$DB_USER" -p"$DB_PASS" -e "CREATE DATABASE MeritAccessLocal" || { handle_error "Failed to run create.sql"; }
-    mariadb -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" < /home/meritaccess/backup.sql || { handle_error "Failed to run create.sql"; }
-    ###
-
-    # mariadb -u"$DB_USER" -p"$DB_PASS" < $DATABASE_UPDATE_DIR/create.sql || { handle_error "Failed to run create.sql"; }
-    # log_message "Updating database"
-    # mariadb -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" < $DATABASE_UPDATE_DIR/update.sql || { handle_error "Failed to run update.sql"; }
+    mysql -u"$DB_USER" -p"$DB_PASS" -e "CREATE DATABASE $DB_NAME" || { handle_error "Failed to CREATE DATABASE $DB_NAME"; }
+    mysql -u"$DB_USER" -p"$DB_PASS" "$DB_NAME"  < $DATABASE_UPDATE_DIR/create.sql || { handle_error "Failed to run create.sql"; }
+    log_message "Updating database"
+    mysql -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" < $DATABASE_UPDATE_DIR/update.sql || { handle_error "Failed to run update.sql"; }
 
     # Merit Access
     install_factory_default "Merit Access" $APP_DIR_PYTHON "$FACTORY_DEFAULT_DIR/merit_access"
@@ -420,6 +410,12 @@ set_led_color 255 255 255
 pigs m "$CONFIG_BTN" r       # set as input
 pigs pud "$CONFIG_BTN" u     # enable pull-up
 detect_factory_reset
+
+if [ $FACTORY_RESET -eq 1 ]; then
+    set_led_color 255 255 255
+    $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+    exit 
+fi
 
 # Run after-image
 if [ "$HOSTNAME" == "cm4" ] || [ "$HOSTNAME" == "MDUD83ADD06DB00" ]; then
@@ -464,4 +460,4 @@ execute_script "$EXTRA_SCRIPT_DIR/extra_script.sh"
 
 set_led_color 255 255 255
 # Run Merit Access App
-# PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
+$PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
