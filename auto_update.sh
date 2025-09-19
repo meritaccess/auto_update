@@ -29,7 +29,7 @@ LOG_FILE="/home/$USER/logs/update.log"
 PYTHON="/usr/bin/python"
 NETWORK_TIMEOUT=30
 UPDATE_SUCCESSFUL=1
-FACTORY_DEFAULT_DIR="/home/$USER/factory_default"
+FACTORY_DEFAULT_DIR="/home/$USER/auto_update/factory_default"
 HOLD_CONFIG_BTN_TIME_S=10
 FACTORY_RESET=0
 
