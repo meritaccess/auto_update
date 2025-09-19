@@ -1,0 +1,22 @@
+<20>Sep 19 10:58:37: DHCP enabled successfully on Wired connection 1.
+<20>Sep 19 10:58:37: Starting Unit: MDUD83ADDB52702, IP(interface=eth0): 192.168.0.215, v2.1.0
+<20>Sep 19 10:58:37: OfflineMode
+<20>Sep 19 10:58:37: SSH password auth enabled: True
+<20>Sep 19 10:58:52: Health check: cpu_temp: 43°C, cpu_usage: 34%, ram_usage: 8%, disk_usage: 52%
+<20>Sep 19 11:03:31: ConfigModeOSDP
+<20>Sep 19 11:03:32: OSDP enabled, starting scan...
+<20>Sep 19 11:04:05: OSDP readers [1, 2] detected
+<20>Sep 19 11:04:05: Generating keys...
+<20>Sep 19 11:04:11: Loading readers...
+<20>Sep 19 11:04:11: OSDP readers successfully loaded. Please switch readers to secure mode
+<20>Sep 19 11:04:11: OfflineMode
+<20>Sep 19 11:04:11: SSH password auth enabled: True
+<30>Sep 19 11:05:11: Reader 2 Tamper Active: False
+<30>Sep 19 11:06:01: Reader 1 Tamper Active: False
+<20>Sep 19 11:06:20: ConfigModeOffline
+<20>Sep 19 11:06:24: Access Point MDUD83ADDB52702 turned on.
+<20>Sep 19 11:06:37: Access Point MDUD83ADDB52702 turned off.
+<20>Sep 19 11:06:37: OfflineMode
+<20>Sep 19 11:06:37: SSH password auth enabled: True
+<20>Sep 19 11:58:54: Health check: cpu_temp: 49°C, cpu_usage: 33%, ram_usage: 8%, disk_usage: 52%
+<20>Sep 19 12:58:55: Health check: cpu_temp: 50°C, cpu_usage: 33%, ram_usage: 8%, disk_usage: 52%
