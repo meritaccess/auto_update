@@ -413,6 +413,9 @@ detect_factory_reset
 
 if [ $FACTORY_RESET -eq 1 ]; then
     set_led_color 255 255 255
+    # Wiegand device nodes
+    create_device_node /dev/wie1 240 0
+    create_device_node /dev/wie2 239 0
     $PYTHON $APP_DIR_PYTHON/main.py || handle_error "Failed to run Merit Access App"
     exit 
 fi
